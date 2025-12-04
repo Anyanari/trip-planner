@@ -1,9 +1,8 @@
 -- Схема БД
 -- Trip Planner Database Schema
--- Автор: Эрфурт Анна
 
 -- ============================================
--- 1. СОЗДАНИЕ ТАБЛИЦ (если их нет)
+-- 1. СОЗДАНИЕ ТАБЛИЦ
 -- ============================================
 
 BEGIN;
@@ -229,7 +228,7 @@ END;
 
 
 -- ============================================
--- 2. ФУНКЦИИ
+-- 2. ТРИГГЕРЫ
 -- ============================================
 
 CREATE OR REPLACE FUNCTION public.check_expense_shares_sum()
@@ -394,7 +393,7 @@ BEGIN
     SELECT EXISTS(
         SELECT 1 FROM trip_members tm
         JOIN suggestions s ON tm.trip_id = s.trip_id
-        WHERE s.id = NEW.suggestion_id 
+        WHERE s.id = NEW.suggestion_id
           AND tm.user_id = NEW.user_id
     ) INTO is_member;
     
@@ -414,3 +413,149 @@ CREATE OR REPLACE TRIGGER check_voter_is_member_trigger
     ON public.votes
     FOR EACH ROW
     EXECUTE FUNCTION public.check_voter_is_member();
+
+
+-- ============================================
+-- 3. ФУНКЦИИ
+-- ============================================
+
+CREATE OR REPLACE FUNCTION public.auto_close_votings(
+	)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    UPDATE suggestions
+    SET status = CASE
+        WHEN votes_for > votes_against THEN 'accepted'
+        ELSE 'rejected'
+    END
+    WHERE status = 'voting'
+      AND suggested_at < CURRENT_TIMESTAMP - INTERVAL '7 days';
+END;
+$BODY$;
+
+ALTER FUNCTION public.auto_close_votings()
+    OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION public.calculate_trip_balances(
+	p_trip_id integer)
+    RETURNS TABLE(debtor_id integer, debtor_name character varying, creditor_id integer, creditor_name character varying, amount numeric) 
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+    ROWS 1000
+
+AS $BODY$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        es.user_id as debtor_id,
+        du.username as debtor_name,
+        e.paid_by as creditor_id,
+        cu.username as creditor_name,
+        SUM(e.amount * es.share) as amount
+    FROM expenses e
+    JOIN expense_shares es ON e.id = es.expense_id
+    JOIN users du ON es.user_id = du.id
+    JOIN users cu ON e.paid_by = cu.id
+    WHERE e.trip_id = p_trip_id 
+      AND es.user_id != e.paid_by
+    GROUP BY es.user_id, du.username, e.paid_by, cu.username
+    HAVING SUM(e.amount * es.share) > 0
+    ORDER BY amount DESC;
+END;
+$BODY$;
+
+ALTER FUNCTION public.calculate_trip_balances(integer)
+    OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION public.create_trip_with_admin(
+	p_title character varying,
+	p_description text,
+	p_start_date date,
+	p_end_date date,
+	p_admin_id integer)
+    RETURNS integer
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    new_trip_id INT;
+BEGIN
+    -- ‘®§¤ Ґ¬ Ї®Ґ§¤Єг
+    INSERT INTO trips (title, description, start_date, end_date, admin_id)
+    VALUES (p_title, p_description, p_start_date, p_end_date, p_admin_id)
+    RETURNING id INTO new_trip_id;
+    
+    -- „®Ў ў«пҐ¬ ®аЈ ­Ё§ в®а  Є Є гз бв­ЁЄ 
+    INSERT INTO trip_members (trip_id, user_id, role)
+    VALUES (new_trip_id, p_admin_id, 'admin');
+    
+    RETURN new_trip_id;
+END;
+$BODY$;
+
+ALTER FUNCTION public.create_trip_with_admin(character varying, text, date, date, integer)
+    OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION public.get_or_create_place(
+	p_name character varying,
+	p_lat numeric,
+	p_lng numeric,
+	p_osm_id character varying,
+	p_address text DEFAULT NULL::text)
+    RETURNS integer
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    place_id INT;
+BEGIN
+    SELECT id INTO place_id 
+    FROM places 
+    WHERE osm_id = p_osm_id;
+   
+    IF place_id IS NULL THEN
+        INSERT INTO places (name, lat, lng, osm_id, address)
+        VALUES (p_name, p_lat, p_lng, p_osm_id, p_address)
+        RETURNING id INTO place_id;
+    END IF;
+    
+    RETURN place_id;
+END;
+$BODY$;
+
+ALTER FUNCTION public.get_or_create_place(character varying, numeric, numeric, character varying, text)
+    OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION public.vote_on_suggestion(
+	p_suggestion_id integer,
+	p_user_id integer,
+	p_vote boolean)
+    RETURNS boolean
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    IF (SELECT status FROM suggestions WHERE id = p_suggestion_id) != 'voting' THEN
+        RAISE EXCEPTION 'Voting is closed for this suggestion';
+    END IF;
+    
+    INSERT INTO votes (suggestion_id, user_id, vote)
+    VALUES (p_suggestion_id, p_user_id, p_vote)
+    ON CONFLICT (suggestion_id, user_id) 
+    DO UPDATE SET vote = p_vote, voted_time = CURRENT_TIMESTAMP;
+    
+    RETURN TRUE;
+END;
+$BODY$;
+
+ALTER FUNCTION public.vote_on_suggestion(integer, integer, boolean)
+    OWNER TO postgres;
+
