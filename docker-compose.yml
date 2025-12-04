@@ -14,9 +14,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
-
       - ./database/scripts:/docker-entrypoint-initdb.d/scripts
     networks:
       - trip-planner-network
@@ -27,28 +25,6 @@ services:
       retries: 5
       start_period: 30s
 
-  migrations:
-    build: .
-    container_name: trip-planner-migrations
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/tripplanner
-      PYTHONPATH: /app
-    volumes:
-      - ./migrations:/app/migrations
-      - ./database:/app/database
-    command: >
-      sh -c "echo 'Ожидание запуска БД...' &&
-             sleep 5 &&
-             echo 'Выполнение миграций...' &&
-             python migrations/init_migration.py &&
-             echo 'Миграции выполнены'"
-    restart: "no"
-
-
-  # Дополнительный сервис PGAdmin (удобно для просмотра БД)
   pgadmin:
     image: dpage/pgadmin4
     container_name: trip-planner-pgadmin
