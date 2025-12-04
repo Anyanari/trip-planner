@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  postgres:
+    build: ./database
+    container_name: trip-planner-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: tripplanner
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+      - ./database/scripts:/docker-entrypoint-initdb.d/scripts
+    networks:
+      - trip-planner-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  migrations:
+    build: .
+    container_name: trip-planner-migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/tripplanner
+      PYTHONPATH: /app
+    volumes:
+      - ./migrations:/app/migrations
+      - ./database:/app/database
+    command: >
+      sh -c "echo 'Ожидание запуска БД...' &&
+             sleep 5 &&
+             echo 'Выполнение миграций...' &&
+             python migrations/init_migration.py &&
+             echo 'Миграции выполнены'"
+    restart: "no"
+
+
+  # Дополнительный сервис PGAdmin (удобно для просмотра БД)
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: trip-planner-pgadmin
+    depends_on:
+      - postgres
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - trip-planner-network
+
+volumes:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  trip-planner-network:
+    driver: bridge
