@@ -226,3 +226,191 @@ ALTER TABLE IF EXISTS public.votes
     ON DELETE CASCADE;
 
 END;
+
+
+-- ============================================
+-- 2. ФУНКЦИИ
+-- ============================================
+
+CREATE OR REPLACE FUNCTION public.check_expense_shares_sum()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+DECLARE
+    total_shares DECIMAL;
+BEGIN
+    SELECT SUM(share) INTO total_shares
+    FROM expense_shares
+    WHERE expense_id = NEW.expense_id;
+    
+    IF total_shares != 1.00 THEN
+        RAISE EXCEPTION 'Sum of all shares must equal 1.0, current sum: %', total_shares;
+    END IF;
+    
+    RETURN NULL;
+END;
+$BODY$;
+
+ALTER FUNCTION public.check_expense_shares_sum()
+    OWNER TO postgres;
+
+CREATE CONSTRAINT TRIGGER check_expense_shares_sum_trigger
+    AFTER INSERT OR UPDATE
+    ON public.expense_shares
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW
+    EXECUTE FUNCTION public.check_expense_shares_sum();
+
+CREATE OR REPLACE FUNCTION public.check_place_accepted()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+DECLARE
+    suggestion_status VARCHAR(20);
+BEGIN
+    SELECT status INTO suggestion_status
+    FROM suggestions
+    WHERE trip_id = NEW.trip_id AND place_id = NEW.place_id;
+    
+    IF suggestion_status != 'accepted' THEN
+        RAISE EXCEPTION 'Place must be accepted in suggestions before adding to route';
+    END IF;
+    
+    RETURN NEW;
+END;
+$BODY$;
+
+ALTER FUNCTION public.check_place_accepted()
+    OWNER TO postgres;
+
+CREATE OR REPLACE TRIGGER check_place_accepted_trigger
+    BEFORE INSERT
+    ON public.routes
+    FOR EACH ROW
+    EXECUTE FUNCTION public.check_place_accepted();
+
+
+CREATE OR REPLACE FUNCTION public.check_trip_dates()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+BEGIN
+    IF NEW.start_date > NEW.end_date THEN
+        RAISE EXCEPTION 'Start date cannot be after end date';
+    END IF;
+    
+    RETURN NEW;
+END;
+$BODY$;
+
+ALTER FUNCTION public.check_trip_dates()
+    OWNER TO postgres;
+
+CREATE OR REPLACE TRIGGER check_trip_dates_trigger
+    BEFORE INSERT OR UPDATE
+    ON public.trips
+    FOR EACH ROW
+    EXECUTE FUNCTION public.check_trip_dates();
+
+CREATE OR REPLACE FUNCTION public.update_vote_counters()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        IF NEW.vote = TRUE THEN
+            UPDATE suggestions
+            SET votes_for = votes_for + 1
+            WHERE id = NEW.suggestion_id;
+        ELSE
+            UPDATE suggestions
+            SET votes_against = votes_against + 1
+            WHERE id = NEW.suggestion_id;
+        END IF;
+    ELSIF TG_OP = 'DELETE' THEN
+        IF OLD.vote = TRUE THEN
+            UPDATE suggestions
+            SET votes_for = votes_for - 1
+            WHERE id = OLD.suggestion_id;
+        ELSE
+            UPDATE suggestions
+            SET votes_against = votes_against - 1
+            WHERE id = OLD.suggestion_id;
+        END IF;
+    ELSIF TG_OP = 'UPDATE' THEN
+        IF OLD.vote = TRUE THEN
+            UPDATE suggestions
+            SET votes_for = votes_for - 1
+            WHERE id = OLD.suggestion_id;
+        ELSE
+            UPDATE suggestions
+            SET votes_against = votes_against - 1
+            WHERE id = OLD.suggestion_id;
+        END IF;
+
+        IF NEW.vote = TRUE THEN
+            UPDATE suggestions
+            SET votes_for = votes_for + 1
+            WHERE id = NEW.suggestion_id;
+        ELSE
+            UPDATE suggestions
+            SET votes_against = votes_against + 1
+            WHERE id = NEW.suggestion_id;
+        END IF;
+    END IF;
+    
+    RETURN NULL;
+END;
+$BODY$;
+
+ALTER FUNCTION public.update_vote_counters()
+    OWNER TO postgres;
+
+
+CREATE OR REPLACE TRIGGER update_vote_counters_trigger
+    AFTER INSERT OR DELETE OR UPDATE
+    ON public.votes
+    FOR EACH ROW
+    EXECUTE FUNCTION public.update_vote_counters();
+
+
+CREATE OR REPLACE FUNCTION public.check_voter_is_member()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+DECLARE
+    is_member BOOLEAN;
+BEGIN
+    SELECT EXISTS(
+        SELECT 1 FROM trip_members tm
+        JOIN suggestions s ON tm.trip_id = s.trip_id
+        WHERE s.id = NEW.suggestion_id 
+          AND tm.user_id = NEW.user_id
+    ) INTO is_member;
+    
+    IF NOT is_member THEN
+        RAISE EXCEPTION 'User % is not a member of this trip', NEW.user_id;
+    END IF;
+    
+    RETURN NEW;
+END;
+$BODY$;
+
+ALTER FUNCTION public.check_voter_is_member()
+    OWNER TO postgres;
+
+CREATE OR REPLACE TRIGGER check_voter_is_member_trigger
+    BEFORE INSERT
+    ON public.votes
+    FOR EACH ROW
+    EXECUTE FUNCTION public.check_voter_is_member();
