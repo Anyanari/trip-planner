@@ -40,6 +40,38 @@ services:
     networks:
       - trip-planner-network
 
+  backend:
+    build: ./backend
+    container_name: trip-planner-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/tripplanner
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    networks:
+      - trip-planner-network
+
+  frontend:
+    build: ./frontend
+    container_name: trip-planner-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      REACT_APP_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - trip-planner-network
+
 volumes:
   postgres_data:
     driver: local
