@@ -3,12 +3,12 @@ from sqlalchemy.orm import Session
 from typing import List
 from ..database import get_db
 from ..models import User as UserModel
-from ..schemas import User, UserCreate
+from ..schemas import UserResponse, UserCreate
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
 
-@router.post("/", response_model=User)
+@router.post("/", response_model=UserResponse)
 def create_user(user: UserCreate, db: Session = Depends(get_db)):
     db_user = db.query(UserModel).filter(UserModel.email == user.email).first()
     if db_user:
@@ -25,13 +25,13 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
     return db_user
 
 
-@router.get("/", response_model=List[User])
+@router.get("/", response_model=List[UserResponse])
 def get_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     users = db.query(UserModel).offset(skip).limit(limit).all()
     return users
 
 
-@router.get("/{user_id}", response_model=User)
+@router.get("/{user_id}", response_model=UserResponse)
 def get_user(user_id: int, db: Session = Depends(get_db)):
     user = db.query(UserModel).filter(UserModel.id == user_id).first()
     if user is None:

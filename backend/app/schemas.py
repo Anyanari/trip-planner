@@ -1,6 +1,7 @@
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List, Literal
-from datetime import date, datetime, time
+import datetime as dt
+from decimal import Decimal
 
 
 # User schemas
@@ -15,7 +16,16 @@ class UserCreate(UserBase):
 
 class User(UserBase):
     id: int
-    created_time: datetime
+    created_time: dt.datetime
+    
+    class Config:
+        from_attributes = True
+
+class UserResponse(BaseModel):
+    id: int
+    email: EmailStr
+    username: str
+    created_time: dt.datetime
     
     class Config:
         from_attributes = True
@@ -25,25 +35,25 @@ class User(UserBase):
 class TripBase(BaseModel):
     title: str
     description: Optional[str] = None
-    start_date: date
-    end_date: date
+    start_date: dt.date
+    end_date: dt.date
 
 
 class TripCreate(TripBase):
-    pass
+    admin: Optional[int] = None
 
 
 class TripUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
-    start_date: Optional[date] = None
-    end_date: Optional[date] = None
+    start_date: Optional[dt.date] = None
+    end_date: Optional[dt.date] = None
 
 
 class Trip(TripBase):
     id: int
     admin: Optional[int] = None
-    created_time: datetime
+    created_time: dt.datetime
     is_active: bool
     
     class Config:
@@ -68,7 +78,7 @@ class TripMember(TripMemberBase):
     id: int
     trip_id: int
     user_id: int
-    joined_at: datetime
+    joined_at: dt.datetime
     user: User
     
     class Config:
@@ -88,9 +98,17 @@ class PlaceCreate(PlaceBase):
     pass
 
 
+class PlaceUpdate(BaseModel):
+    name: Optional[str] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    osm_id: Optional[str] = None
+    address: Optional[str] = None
+
+
 class Place(PlaceBase):
     id: int
-    created_at: datetime
+    created_at: dt.datetime
     
     class Config:
         from_attributes = True
@@ -103,18 +121,19 @@ class SuggestionBase(BaseModel):
 
 
 class SuggestionCreate(SuggestionBase):
-    pass
+    suggested_by: int
+    suggestion_type: str = "place"
 
 
 class Suggestion(SuggestionBase):
     id: int
     suggested_by: int
-    suggested_at: datetime
-    status: Literal["voting", "accepted", "rejected"]
+    suggested_at: dt.datetime
+    status: str
     votes_for: int
     votes_against: int
-    place: Place
-    suggested_by_user: User
+    place: Optional[Place] = None
+    suggested_by_user: Optional[User] = None
     
     class Config:
         from_attributes = True
@@ -125,12 +144,17 @@ class VoteCreate(BaseModel):
     vote: bool
 
 
+class VoteRequest(BaseModel):
+    user_id: int
+    vote: bool
+
+
 class Vote(BaseModel):
     id: int
     suggestion_id: int
     user_id: int
     vote: bool
-    voted_at: datetime
+    voted_at: dt.datetime
     
     class Config:
         from_attributes = True
@@ -142,28 +166,28 @@ class RouteBase(BaseModel):
     place_id: int
     day_number: int
     order_in_day: int
-    planned_time: Optional[time] = None
-    estimated_cost: Optional[float] = None
+    planned_time: Optional[dt.time] = None
+    estimated_cost: Optional[Decimal] = None
     notes: Optional[str] = None
 
 
 class RouteCreate(RouteBase):
-    added_by: int
+    added_by: Optional[int] = None
 
 
 class RouteUpdate(BaseModel):
     day_number: Optional[int] = None
     order_in_day: Optional[int] = None
-    planned_time: Optional[time] = None
-    estimated_cost: Optional[float] = None
+    planned_time: Optional[dt.time] = None
+    estimated_cost: Optional[Decimal] = None
     notes: Optional[str] = None
 
 
 class Route(RouteBase):
     id: int
     added_by: Optional[int] = None
-    added_at: datetime
-    place: Place
+    added_at: dt.datetime
+    place: Optional[Place] = None
     added_by_user: Optional[User] = None
     
     class Config:
@@ -174,19 +198,25 @@ class Route(RouteBase):
 class ExpenseBase(BaseModel):
     trip_id: int
     title: str
-    amount: float
+    amount: Decimal
     currency: str = "RUB"
     paid_by: int
+    date: Optional[dt.date] = None
+
+
+class ExpenseShareCreate(BaseModel):
+    user_id: int
+    share: float
 
 
 class ExpenseCreate(ExpenseBase):
-    shares: List[dict]  # [{"user_id": int, "share": float}]
+    shares: Optional[List[ExpenseShareCreate]] = None
 
 
 class Expense(ExpenseBase):
     id: int
-    created_at: datetime
-    paid_by_user: User
+    created_at: dt.datetime
+    paid_by_user: Optional[User] = None
     
     class Config:
         from_attributes = True
@@ -232,11 +262,13 @@ class OSMSearchResponse(BaseModel):
     places: List[OSMPlace]
 
 
-# Auth schemas
-class Token(BaseModel):
-    access_token: str
-    token_type: str
+class ExpenseUpdate(BaseModel):
+    title: Optional[str] = None
+    amount: Optional[Decimal] = None
+    currency: Optional[str] = None
+    paid_by: Optional[int] = None
+    date: Optional[dt.date] = None
 
 
-class TokenData(BaseModel):
-    username: Optional[str] = None
+class SuggestionUpdate(BaseModel):
+    status: Optional[str] = None
