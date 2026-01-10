@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS public.expenses
     amount numeric(10, 2) NOT NULL,
     currency character varying(3) COLLATE pg_catalog."default" DEFAULT 'RUB'::character varying,
     paid_by integer NOT NULL,
+    date date NOT NULL,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT expenses_pkey PRIMARY KEY (id)
 );

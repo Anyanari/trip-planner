@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from ..database import get_db
 from ..models import Route as RouteModel, Trip as TripModel, Place as PlaceModel, User as UserModel
 from ..schemas import Route as RouteSchema, RouteCreate, RouteUpdate
@@ -13,20 +13,12 @@ def create_route(route: RouteCreate, db: Session = Depends(get_db)):
     # Check if trip exists
     trip = db.query(TripModel).filter(TripModel.id == route.trip_id).first()
     if not trip:
-        raise HTTPException(status_code=404, detail="Trip not found")
+        raise HTTPException(status_code=400, detail="Trip not found")
     
     # Check if place exists
     place = db.query(PlaceModel).filter(PlaceModel.id == route.place_id).first()
     if not place:
-        raise HTTPException(status_code=404, detail="Place not found")
-    
-    # Check if route already exists for this place in trip
-    existing = db.query(RouteModel).filter(
-        RouteModel.trip_id == route.trip_id,
-        RouteModel.place_id == route.place_id
-    ).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="Place already in route")
+        raise HTTPException(status_code=400, detail="Place not found")
     
     db_route = RouteModel(
         trip_id=route.trip_id,
@@ -42,6 +34,23 @@ def create_route(route: RouteCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_route)
     return db_route
+
+
+@router.get("/", response_model=List[RouteSchema])
+def get_routes(
+    skip: int = 0,
+    limit: int = 100,
+    trip_id: Optional[int] = Query(default=None),
+    day_number: Optional[int] = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    query = db.query(RouteModel)
+    if trip_id is not None:
+        query = query.filter(RouteModel.trip_id == trip_id)
+    if day_number is not None:
+        query = query.filter(RouteModel.day_number == day_number)
+    routes = query.offset(skip).limit(limit).all()
+    return routes
 
 
 @router.get("/trip/{trip_id}", response_model=List[RouteSchema])
@@ -82,6 +91,11 @@ def update_route(route_id: int, route_update: RouteUpdate, db: Session = Depends
     db.commit()
     db.refresh(route)
     return route
+
+
+@router.put("/{route_id}", response_model=RouteSchema)
+def update_route_put(route_id: int, route_update: RouteUpdate, db: Session = Depends(get_db)):
+    return update_route(route_id=route_id, route_update=route_update, db=db)
 
 
 @router.delete("/{route_id}")

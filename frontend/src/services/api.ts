@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { User, Trip, Place, Suggestion, Route, Expense, Balance, OSMPlace } from '../types';
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -9,6 +9,47 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
 });
+
+// Add request interceptor to include auth token
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('access_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Add response interceptor to handle errors
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('access_token');
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
+
+// Auth
+export const login = async (username: string, password: string) => {
+  const formData = new FormData();
+  formData.append('username', username);
+  formData.append('password', password);
+  
+  const response = await api.post('/api/auth/token', formData);
+  return response.data;
+};
+
+export const register = async (userData: { email: string; username: string; password?: string }) => {
+  const response = await api.post('/api/auth/register', userData);
+  return response.data;
+};
+
+export const getCurrentUser = async (): Promise<User> => {
+  const response = await api.get('/api/auth/me');
+  return response.data;
+};
 
 // Users
 export const getUsers = async (): Promise<User[]> => {
@@ -32,8 +73,8 @@ export const getTrips = async (): Promise<Trip[]> => {
   return response.data;
 };
 
-export const createTrip = async (tripData: any): Promise<Trip> => {
-  const response = await api.post('/api/trips/', tripData);
+export const createTrip = async (tripData: any, userId: number): Promise<Trip> => {
+  const response = await api.post(`/api/trips/?user_id=${userId}`, tripData);
   return response.data;
 };
 

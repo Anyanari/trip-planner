@@ -31,8 +31,7 @@ export const TripsPage: React.FC = () => {
   const handleCreateTrip = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const tripWithUser = { ...newTrip, user_id: 1 }; // TODO: Get current user ID
-      await createTrip(tripWithUser);
+      await createTrip(newTrip, 1); // TODO: Get current user ID
       setNewTrip({ title: '', description: '', start_date: '', end_date: '' });
       setShowCreateForm(false);
       loadTrips();

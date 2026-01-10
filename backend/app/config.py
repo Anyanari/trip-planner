@@ -1,20 +1,23 @@
-from pydantic_settings import BaseSettings
 from typing import Optional
+
+from pydantic import AliasChoices, Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    database_url: str
-    osm_nominatim_url: str = "https://nominatim.openstreetmap.org"
+    database_url: str = Field(
+        default="sqlite:///./app.db",
+        validation_alias=AliasChoices("DATABASE_URL", "database_url"),
+    )
+    osm_nominatim_url: str = Field(
+        default="https://nominatim.openstreetmap.org",
+        validation_alias=AliasChoices("OSM_NOMINATIM_URL", "osm_nominatim_url"),
+    )
     app_name: str = "Trip Planner API"
     debug: bool = True
-    secret_key: str
-    algorithm: str = "HS256"
-    access_token_expire_minutes: int = 30
     host: Optional[str] = "0.0.0.0"
     port: Optional[int] = 8000
 
-    class Config:
-        env_file = ".env"
-        extra = "ignore"  # Игнорировать лишние поля
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
 
 settings = Settings()

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from ..database import get_db
 from ..models import Trip as TripModel, User as UserModel, TripMember as TripMemberModel
 from ..schemas import Trip as TripSchema, TripCreate, TripUpdate, TripWithDetails, TripMember as TripMemberSchema, TripMemberCreate
@@ -9,7 +9,14 @@ router = APIRouter(prefix="/api/trips", tags=["trips"])
 
 
 @router.post("/", response_model=TripSchema)
-def create_trip(trip: TripCreate, user_id: int, db: Session = Depends(get_db)):
+def create_trip(trip: TripCreate, db: Session = Depends(get_db)):
+    # Prefer admin from request if provided; fallback to 1.
+    user_id = trip.admin or 1
+
+    admin_user = db.query(UserModel).filter(UserModel.id == user_id).first()
+    if not admin_user:
+        raise HTTPException(status_code=400, detail="Admin user not found")
+    
     # Create trip with specified user as admin
     db_trip = TripModel(
         title=trip.title,
@@ -34,10 +41,13 @@ def create_trip(trip: TripCreate, user_id: int, db: Session = Depends(get_db)):
 def get_trips(
     skip: int = 0, 
     limit: int = 100, 
+    admin_id: Optional[int] = Query(default=None),
     db: Session = Depends(get_db)
 ):
-    # Get all trips (no user filtering for now)
-    trips = db.query(TripModel).offset(skip).limit(limit).all()
+    query = db.query(TripModel)
+    if admin_id is not None:
+        query = query.filter(TripModel.admin == admin_id)
+    trips = query.offset(skip).limit(limit).all()
     return trips
 
 
@@ -76,6 +86,11 @@ def update_trip(trip_id: int, trip_update: TripUpdate, db: Session = Depends(get
     db.commit()
     db.refresh(trip)
     return trip
+
+
+@router.put("/{trip_id}", response_model=TripSchema)
+def update_trip_put(trip_id: int, trip_update: TripUpdate, db: Session = Depends(get_db)):
+    return update_trip(trip_id=trip_id, trip_update=trip_update, db=db)
 
 
 @router.delete("/{trip_id}")

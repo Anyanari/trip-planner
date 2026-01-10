@@ -240,6 +240,7 @@ export const TripDetailPage: React.FC = () => {
         amount: parseFloat(newExpense.amount),
         currency: newExpense.currency,
         paid_by: parseInt(newExpense.paid_by, 10),
+        date: new Date().toISOString().split('T')[0], // Today's date in YYYY-MM-DD format
         shares,
       };
 

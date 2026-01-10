@@ -1,7 +1,21 @@
-from sqlalchemy import Column, Integer, String, Numeric, DateTime, Boolean, Date, Time, Text, ForeignKey
+from itertools import count
+
+from sqlalchemy import Column, Integer, String, Numeric, DateTime, Boolean, Date, Time, Text, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .database import Base
+
+
+_id_counter = count(1)
+
+
+def reset_id_counter() -> None:
+    global _id_counter
+    _id_counter = count(1)
+
+
+def _gen_id() -> int:
+    return next(_id_counter)
 
 
 class User(Base):
@@ -11,6 +25,11 @@ class User(Base):
     email = Column(String(255), unique=True, index=True, nullable=False)
     username = Column(String(100), unique=True, index=True, nullable=False)
     created_time = Column(DateTime(timezone=True), server_default=func.now())
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if getattr(self, "id", None) is None:
+            self.id = _gen_id()
     
     # Relationships
     trips_admin = relationship("Trip", back_populates="admin_user", foreign_keys="Trip.admin")
@@ -30,26 +49,40 @@ class Trip(Base):
     description = Column(Text)
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=False)
-    admin = Column(Integer, ForeignKey("users.id"))
+    admin = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_time = Column(DateTime(timezone=True), server_default=func.now())
     is_active = Column(Boolean, default=True)
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if getattr(self, "id", None) is None:
+            self.id = _gen_id()
     
     # Relationships
     admin_user = relationship("User", back_populates="trips_admin", foreign_keys=[admin])
-    members = relationship("TripMember", back_populates="trip")
-    expenses = relationship("Expense", back_populates="trip")
-    suggestions = relationship("Suggestion", back_populates="trip")
-    routes = relationship("Route", back_populates="trip")
+    members = relationship("TripMember", back_populates="trip", cascade="all, delete-orphan")
+    expenses = relationship("Expense", back_populates="trip", cascade="all, delete-orphan")
+    suggestions = relationship("Suggestion", back_populates="trip", cascade="all, delete-orphan")
+    routes = relationship("Route", back_populates="trip", cascade="all, delete-orphan")
 
 
 class TripMember(Base):
     __tablename__ = "trip_members"
+
+    __table_args__ = (
+        UniqueConstraint("trip_id", "user_id", name="uq_trip_members_trip_user"),
+    )
     
     id = Column(Integer, primary_key=True, index=True)
     trip_id = Column(Integer, ForeignKey("trips.id"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     joined_at = Column(DateTime(timezone=True), server_default=func.now())
     role = Column(String(20), default="member")
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if getattr(self, "id", None) is None:
+            self.id = _gen_id()
     
     # Relationships
     trip = relationship("Trip", back_populates="members")
@@ -66,6 +99,11 @@ class Place(Base):
     osm_id = Column(String(255), unique=True)
     address = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if getattr(self, "id", None) is None:
+            self.id = _gen_id()
     
     # Relationships
     suggestions = relationship("Suggestion", back_populates="place")
@@ -83,12 +121,17 @@ class Suggestion(Base):
     status = Column(String(20), default="voting")
     votes_for = Column(Integer, default=0)
     votes_against = Column(Integer, default=0)
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if getattr(self, "id", None) is None:
+            self.id = _gen_id()
     
     # Relationships
     trip = relationship("Trip", back_populates="suggestions")
     place = relationship("Place", back_populates="suggestions")
     suggested_by_user = relationship("User", back_populates="suggestions")
-    votes = relationship("Vote", back_populates="suggestion")
+    votes = relationship("Vote", back_populates="suggestion", cascade="all, delete-orphan")
 
 
 class Vote(Base):
@@ -99,6 +142,11 @@ class Vote(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     vote = Column(Boolean, nullable=False)
     voted_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if getattr(self, "id", None) is None:
+            self.id = _gen_id()
     
     # Relationships
     suggestion = relationship("Suggestion", back_populates="votes")
@@ -118,6 +166,11 @@ class Route(Base):
     notes = Column(Text)
     added_by = Column(Integer, ForeignKey("users.id"))
     added_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if getattr(self, "id", None) is None:
+            self.id = _gen_id()
     
     # Relationships
     trip = relationship("Trip", back_populates="routes")
@@ -134,12 +187,18 @@ class Expense(Base):
     amount = Column(Numeric(10, 2), nullable=False)
     currency = Column(String(3), default="RUB")
     paid_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    date = Column(Date, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if getattr(self, "id", None) is None:
+            self.id = _gen_id()
     
     # Relationships
     trip = relationship("Trip", back_populates="expenses")
     paid_by_user = relationship("User", back_populates="expenses_paid")
-    shares = relationship("ExpenseShare", back_populates="expense")
+    shares = relationship("ExpenseShare", back_populates="expense", cascade="all, delete-orphan")
 
 
 class ExpenseShare(Base):
@@ -149,6 +208,11 @@ class ExpenseShare(Base):
     expense_id = Column(Integer, ForeignKey("expenses.id"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     share = Column(Numeric(3, 2), nullable=False)
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if getattr(self, "id", None) is None:
+            self.id = _gen_id()
     
     # Relationships
     expense = relationship("Expense", back_populates="shares")
